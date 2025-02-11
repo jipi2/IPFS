@@ -3,6 +3,7 @@ from flask import Flask
 from config import Config
 from database.models import init_db
 from routes import api_bp  # Import the Blueprint from routes/__init__.py
+from flask_jwt_extended import JWTManager
 
 app = Flask(__name__)
 
@@ -13,6 +14,8 @@ init_db(app)
 
 # Register the main Blueprint containing all routes
 app.register_blueprint(api_bp)
+
+jwt  = JWTManager(app)
 
 @app.route("/")
 def hello_world():

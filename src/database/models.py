@@ -12,6 +12,8 @@ class User(db.Model):
     def __repr__(self):
         return f"<User {self.username}>"
     
+
+
 def init_db(app):
     db.init_app(app)
     with app.app_context():

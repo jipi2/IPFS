@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from database.models import User
 from database.models import db
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 user_bp = Blueprint("user_bp", __name__)
 
@@ -19,3 +20,9 @@ def create_user():
 def get_users():
     users = User.query.all()
     return jsonify([{"userID": u.userID, "username": u.username, "mail": u.mail} for u in users])
+
+
+@user_bp.route("/get-jwt", methods=["GET"])
+def get_jwt():
+    access_token = create_access_token(identity="test")
+    return jsonify(access_token), 200
