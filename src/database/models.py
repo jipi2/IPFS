@@ -9,7 +9,7 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False) # hashed password
 
     def __repr__(self):
-        return f"<User {self.username}>"
+        return f"<User {self.mail}>"
     
 class File(db.Model):
     __tablename__="files"
