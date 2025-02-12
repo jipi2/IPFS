@@ -1,6 +1,8 @@
 import express from "express";
 import { create } from "@web3-storage/w3up-client";
 import fs from "fs";
+import { CID } from "multiformats/cid";
+
 
 const app = express();
 const port = 3000;
@@ -47,6 +49,25 @@ async function uploadFile(fileName) {
     }
 }
 
+async function removeFile(cidStr) {
+  try {
+    const client = await create();
+    console.log("🔑 Logging in...");
+    const account = await client.login("jipianu_mihnea@yahoo.com");
+    console.log("✅ Logged in with account:", account.did());
+    client.setCurrentSpace(didSpace);
+
+    // Convert the CID string into a CID object
+    const cidObj = CID.parse(cidStr);
+
+    await client.remove(cidObj);
+    console.log(`🗑 Removed file with CID: ${cidStr}`);
+  } catch (error) {
+    console.error("❌ Error:", error.message);
+    throw error;
+  }
+}
+
 app.post("/upload", async (req, res) => {
     // Expect a JSON payload: { "fileName": "README.md" }
     const { fileName } = req.body;
@@ -62,6 +83,21 @@ app.post("/upload", async (req, res) => {
     }
   });
 
+  app.post("/delete", async (req, res) => {
+    // Expect a JSON payload: { "cid": "..." }
+    const { cid } = req.body;
+    if (!cid) {
+      return res.status(400).json({ error: "Missing cid in request body" });
+    }
+    try {
+      await removeFile(cid);
+      return res.sendStatus(200);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  
   app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
   });

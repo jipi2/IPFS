@@ -14,8 +14,10 @@ class User(db.Model):
 class File(db.Model):
     __tablename__="files"
     fileID = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    ownerID = db.Column(db.Integer, db.ForeignKey("users.userID"), nullable=False)
     filename = db.Column(db.String(100), nullable=False)
     latestVersion = db.Column(db.Integer, nullable=False)
+    
     
     def __repr__(self):
         return f"<File {self.filename}>"
@@ -33,7 +35,7 @@ class Version(db.Model):
     __tablename__ = "versions"
     fileID = db.Column(db.Integer, db.ForeignKey("files.fileID"), primary_key=True)  # Foreign key to Files
     versionNumber = db.Column(db.Integer, primary_key=True)  # Version number acts as part of primary key
-    fileCID = db.Column(db.String(255), nullable=False)  # IPFS CID
+    fileCID = db.Column(db.String(1024), nullable=False)  # IPFS CID
 
     def __repr__(self):
         return f"<Version File:{self.fileID} Version:{self.versionNumber}>"
