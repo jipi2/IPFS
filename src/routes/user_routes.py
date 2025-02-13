@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for
+from flask import Blueprint, request, jsonify, render_template, flash, redirect, url_for, Response, stream_with_context
 from database.models import User, File, UserFile, Version
 from database.models import db
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, set_access_cookies, JWTManager, unset_jwt_cookies
@@ -18,25 +18,43 @@ ipfsServiceUrlDelete = "http://localhost:3000/delete"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# @user_bp.route("/users", methods=["POST"])
-# def create_user():
-#     data = request.json
-#     new_user = User(username=data["username"], mail=data["mail"], password=data["password"])
-#     print(new_user)
-#     db.session.add(new_user)
-#     db.session.commit()
-#     return jsonify({"message": "User created successfully!"}), 201
+def deleteCIDFromIPFS(fileID:int):
+    try:
+        versions = Version.query.filter_by(fileID=fileID).all()
+        for v in versions:
+            anotherVersionFile = Version.query.filter(Version.fileID!=v.fileID, Version.fileCID==v.fileCID ).first()
+            if anotherVersionFile is None:
+                payload = { "cid": v.fileCID }
+                response = requests.post(ipfsServiceUrlDelete, json=payload)
+                if response.status_code == 200:
+                else:
+                    raise Exception("Error:", response.json().get("error"))
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+    
 
-# @user_bp.route("/users", methods=["GET"])
-# def get_users():
-#     users = User.query.all()
-#     return jsonify([{"userID": u.userID, "username": u.username, "mail": u.mail} for u in users])
+def deleteFile(email:str, filename:str):
+    try:
+        ownerUser = User.query.filter_by(mail=email).first()
+        if ownerUser is None:
+            raise Exception("Owner not found")
+        file = File.query.filter_by(filename=filename, ownerID=ownerUser.userID).first()
+        if file is None:
+            raise Exception("File not found")
+        
+        deleteCIDFromIPFS(file.fileID)
+        
+        Version.query.filter_by(fileID=file.fileID).delete()
+        UserFile.query.filter_by(fileID=file.fileID).delete()
+        File.query.filter_by(fileID=file.fileID).delete()
+        
+        db.session.commit()
 
-
-# @user_bp.route("/get-jwt", methods=["GET"])
-# def get_jwt():
-#     access_token = create_access_token(identity="test")
-#     return jsonify(access_token), 200
+        return True   
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
 
 def saveNewIPFSDataInDB(user:User, cid:str, filename:str):
     try:
@@ -64,8 +82,7 @@ def updateVersion(ownerEmail:str, delegateEmail:str ,filename:str, cid:str):
         if delegateUser is None:
             raise Exception("Delegate not found")    
         
-        print(filename)
-        print(ownerUser.userID)
+        
         file = File.query.filter_by(filename=filename, ownerID=ownerUser.userID).first()
         if file is None:
             raise Exception("File not found")
@@ -85,7 +102,6 @@ def updateVersion(ownerEmail:str, delegateEmail:str ,filename:str, cid:str):
         return None
 
 def uploadFileToIPFS(email:str, ownerEmail:str ,filename:str, newFile:bool):
-    print("AICI")
     try:
         user = User.query.filter_by(mail=email).first()
         if user is None:
@@ -138,7 +154,46 @@ def shareAccess(ownerEmail:str, delegateEmail:str, filename:str, accessMode:int)
         print(f"An error occurred: {e}")
         return None
 
-
+def downloadFile(email:str, ownerEmail:str, filename:str, versionNumber:int):
+    try:
+        
+        user = User.query.filter_by(mail=email).first()
+        if user is None:
+            raise Exception("User not found")
+        
+        ownerUser = User.query.filter_by(mail=ownerEmail).first()
+        if ownerUser is None:
+            raise Exception("Owner not found")
+        
+        file = File.query.filter_by(filename=filename, ownerID=ownerUser.userID).first()
+        if file is None:
+            raise Exception("File not found")
+        
+        userFile = UserFile.query.filter_by(userID=user.userID, fileID=file.fileID).first()
+        if userFile is None:
+            raise Exception("User does not have access to file")
+        elif userFile.accessMode < 0:
+            raise Exception("User does not have access to file")
+        
+        version = Version.query.filter_by(fileID=file.fileID, versionNumber=versionNumber).first()
+        if version is None:
+            raise Exception("Version not found")
+        
+        downloadLink = f"https://{version.fileCID}.ipfs.w3s.link"
+        print(downloadLink)
+        r = requests.get(downloadLink, stream=True)
+        if r.status_code != 200:
+            raise Exception("Failed to download file from IPFS")
+        
+        return Response(
+            stream_with_context(r.iter_content(chunk_size=1024)),
+            content_type=r.headers.get("Content-Type"),
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
 
 @user_bp.route("/logout")
 @jwt_required()
@@ -212,9 +267,9 @@ def home():
             User.mail.label("ownerEmail"),
             UserFile.accessMode
         )
-        .join(User, File.ownerID == User.userID)  # Join to get owner email
-        .outerjoin(UserFile, (File.fileID == UserFile.fileID) & (UserFile.userID == user_id))  # Get access permissions
-        .filter((File.ownerID == user_id) | (UserFile.userID == user_id))  # Get files where the user is the owner OR has access
+        .join(User, File.ownerID == User.userID) 
+        .outerjoin(UserFile, (File.fileID == UserFile.fileID) & (UserFile.userID == user_id)) 
+        .filter((File.ownerID == user_id) | (UserFile.userID == user_id))  
         .all()
     )
 
@@ -227,7 +282,6 @@ def home():
         }
         for file in files
     ]
-    print(files_list)
     return render_template("home.html", files=files_list)
 
 
@@ -297,6 +351,134 @@ def modify_access():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@user_bp.route('/edit-file', methods=['GET', 'POST'])
+@jwt_required()
+def edit_file():
+    current_user = get_jwt_identity() 
+    user_email = current_user.get("email")  
+
+    if request.method == 'GET':
+        ownerEmail = request.args.get("ownerEmail")
+        filename = request.args.get("filename")
+
+        owner=User.query.filter_by(mail=ownerEmail).first()
+        file=File.query.filter_by(filename=filename, ownerID=owner.userID).first()
+        versionNumber=file.latestVersion
+
+        response = downloadFile(user_email, ownerEmail, filename, versionNumber)
+        if isinstance(response, tuple): 
+            flash("Error retrieving file", "danger")
+            return redirect(url_for('api_bp.user_bp.home'))
+
+        file_content = response.get_data(as_text=True)
+
+        return render_template("edit_file.html",
+                               email=user_email,
+                               ownerEmail=ownerEmail,
+                               filename=filename,
+                               versionNumber=versionNumber,
+                               content=file_content)
+    else:
+        updated_content = request.form['content']
+        ownerEmail = request.form['ownerEmail']
+        filename = request.form['filename']
+        versionNumber = int(request.form['versionNumber'])
+
+        temp_file_path = f"../tmp/{filename}"
+        with open(temp_file_path, "w", encoding="utf-8") as f:
+            f.write(updated_content)
+
+        new_cid = uploadFileToIPFS(user_email, ownerEmail, filename, False)
+
+        if new_cid is None:
+            flash("File update failed", "danger")
+        else:
+            flash("File updated successfully", "success")
+
+        return redirect(url_for('api_bp.user_bp.home'))
+
+@user_bp.route("/view/<filename>", methods=["GET"])
+@jwt_required()
+def view_file(filename):
+    user_identity = get_jwt_identity()
+    user_email = user_identity.get("email")
+
+    file = File.query.filter_by(filename=filename).first()
+    if not file:
+        flash("File not found!", "danger")
+        return redirect(url_for("api_bp.user_bp.home"))
+
+    latest_version = file.latestVersion
+
+    versions = Version.query.filter_by(fileID=file.fileID).all()
+
+    latest_version_data = Version.query.filter_by(fileID=file.fileID, versionNumber=latest_version).first()
+    file_cid = latest_version_data.fileCID if latest_version_data else None
+
+    if not file_cid:
+        flash("No versions found!", "danger")
+        return redirect(url_for("api_bp.user_bp.home"))
+
+    file_owner = User.query.filter_by(userID=file.ownerID).first()
+    owner_email = file_owner.mail if file_owner else None  
+
+    return render_template(
+        "view_file.html",
+        filename=filename,
+        versions=versions,
+        latest_version=latest_version,
+        file_cid=file_cid,
+        file_owner=owner_email,  
+        file_url=f"https://{file_cid}.ipfs.w3s.link",
+    )
+
+
+@user_bp.route("/get-version-cid/<filename>/<int:version>", methods=["GET"])
+@jwt_required()
+def get_version_cid(filename, version):
+    file = File.query.filter_by(filename=filename).first()
+    
+    if not file:
+        return jsonify({"error": "File not found"}), 404
+
+    version_data = Version.query.filter_by(fileID=file.fileID, versionNumber=version).first()
+    
+    if not version_data:
+        return jsonify({"error": "Version not found"}), 404
+
+    return jsonify({"cid": version_data.fileCID}), 200
+
+@user_bp.route("/download/<fileOwner>/<filename>/<version>", methods=["GET"])
+@jwt_required()
+def download(fileOwner, filename, version):
+    current_user = get_jwt_identity() 
+    user_email = current_user.get("email")  
+
+    print(f"Downloading {filename}, Version: {version}, Owner: {fileOwner}, Requested by: {user_email}")
+
+    return downloadFile(user_email, fileOwner, filename, version)
+
+
+@user_bp.route("/delete-file/<filename>", methods=["POST"])
+@jwt_required()
+def delete_file(filename):
+    current_user = get_jwt_identity()  
+    email = current_user.get("email")  
+
+    if not filename:
+        return jsonify({"error": "Missing filename"}), 400
+
+    try:
+        result = deleteFile(email, filename)  
+
+        if result is None:
+            return jsonify({"error": "File deletion failed"}), 500
+
+        return jsonify({"success": True, "message": "File deleted successfully!"}), 200  
+    except Exception as e:
+        print(f"Error deleting file: {str(e)}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
 

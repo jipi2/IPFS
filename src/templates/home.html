@@ -44,21 +44,33 @@
         <td class="text-end">
             <div class="d-flex flex-row gap-2 justify-content-end align-items-center">
                 {% if file.Permissions == 0 %}
-                    <a href="/view/{{ file.Name }}" class="btn btn-primary btn-sm action-btn">View</a>
+                    <a href="{{ url_for('api_bp.user_bp.view_file', filename=file.Name) }}" class="btn btn-primary btn-sm action-btn">View</a>
                 {% elif file.Permissions == 1 %}
-                    <a href="/edit/{{ file.Name }}" class="icon-button">
-                        <i class="fas fa-pen"></i>
-                    </a>
-                    <a href="/view/{{ file.Name }}" class="btn btn-primary btn-sm action-btn">View</a>
+                    {% if not file.Name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp')) %}
+                        <a href="{{ url_for('api_bp.user_bp.edit_file', email=user_email, ownerEmail=file.User, filename=file.Name, versionNumber=1) }}" class="icon-button">
+                            <i class="fas fa-pen"></i>
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('api_bp.user_bp.view_file', filename=file.Name) }}" class="btn btn-primary btn-sm action-btn">View</a>
                 {% elif file.Permissions == 2 %}
-                    <a href="/edit/{{ file.Name }}" class="icon-button">
-                        <i class="fas fa-pen"></i>
-                    </a>
-                    <a href="/view/{{ file.Name }}" class="btn btn-primary btn-sm action-btn">View</a>
+                    {% if not file.Name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp')) %}
+                        <a href="{{ url_for('api_bp.user_bp.edit_file', email=user_email, ownerEmail=file.User, filename=file.Name, versionNumber=1) }}" class="icon-button">
+                            <i class="fas fa-pen"></i>
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('api_bp.user_bp.view_file', filename=file.Name) }}" class="btn btn-primary btn-sm action-btn">View</a>
                     <a class="btn btn-info btn-sm action-btn modify-btn" data-filename="{{ file.Name }}" data-bs-toggle="modal" data-bs-target="#modifyAccessModal">Modify Permissions</a>
+                    
+                             
+                    <button class="icon-button delete-btn" data-filename="{{ file.Name }}" title="Delete">
+                        <i class="fas fa-trash text-danger"></i>
+                    </button>
+
                 {% endif %}
             </div>
         </td>
+        
+        
     </tr>
     {% endfor %}
             </tbody>
@@ -88,7 +100,6 @@
     </div>
 </div>
 
-<!-- Modify Access Modal -->
 <div class="modal fade" id="modifyAccessModal" tabindex="-1" aria-labelledby="modifyAccessModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -123,17 +134,67 @@
 
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-    let selectedFile = ""; // Store the selected file name
+    document.querySelectorAll(".delete-btn").forEach(button => {
+        button.addEventListener("click", async function () {
+            const filename = this.getAttribute("data-filename");
 
-    // Capture the filename when clicking the "Modify Permissions" button
+            if (!filename) {
+                alert("Error: Missing filename!");
+                return;
+            }
+
+            if (confirm(`Are you sure you want to delete "${filename}"? This action cannot be undone.`)) {
+                const originalIcon = this.innerHTML;
+                this.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+                this.disabled = true;
+
+                const token = localStorage.getItem("access_token");
+
+                try {
+                    const response = await fetch(`/delete-file/${filename}`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}`
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) { 
+                        alert("✅ File deleted successfully!");
+
+                        this.closest("tr").remove();  
+
+                        setTimeout(() => {
+                            window.location.href = "/home";
+                        }, 700);
+                    } else {
+                        alert("❌ Failed to delete file: " + (data.error || "Unknown error"));
+                        this.innerHTML = originalIcon;
+                        this.disabled = false;
+                    }
+                } catch (error) {
+                    console.error("Error deleting file:", error);
+                    alert("❌ Unexpected error occurred.");
+                    this.innerHTML = originalIcon;
+                    this.disabled = false;
+                }
+            }
+        });
+    });
+});
+
+        document.addEventListener("DOMContentLoaded", function () {
+    let selectedFile = ""; 
+
     document.querySelectorAll(".modify-btn").forEach(button => {
         button.addEventListener("click", function () {
-            selectedFile = this.getAttribute("data-filename"); // Get filename
-            console.log("Selected file:", selectedFile); // Debugging log
+            selectedFile = this.getAttribute("data-filename"); 
+            console.log("Selected file:", selectedFile); 
         });
     });
 
-    // Handle Modify Access button click
     document.getElementById("submitAccessChange").addEventListener("click", function () {
         const emailInput = document.getElementById("emailInput").value.trim();
         const selectedAccess = document.querySelector("input[name='accessMode']:checked").value;
@@ -148,11 +209,11 @@
             return;
         }
 
-        // Convert frontend values to backend values
+
         const accessModeMapping = {
-            "0": -1,  // None (Remove access)
-            "1": 0,   // Read
-            "2": 1    // Read & Write
+            "0": -1,  
+            "1": 0,   
+            "2": 1    
         };
 
         const requestData = {
@@ -161,7 +222,7 @@
             filename: selectedFile
         };
 
-        console.log("Sending request:", requestData); // Debugging log
+        console.log("Sending request:", requestData); 
 
         fetch("/modify-access", {
             method: "POST",
@@ -180,10 +241,6 @@
         .catch(error => console.error("Error modifying access:", error));
     });
 });
-
-
-
-
 
         function filterTable() {
             const searchValue = document.getElementById("searchBar").value.toLowerCase();

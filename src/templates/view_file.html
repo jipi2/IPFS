@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewing File: {{ filename }}</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='view_file.css') }}">
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="header">
+            <h2 class="mb-3"><i class="fas fa-file-alt"></i> Viewing File: <strong>{{ filename }}</strong></h2>
+            <a id="downloadButton" class="btn btn-primary" data-file-owner="{{ file_owner }}" href="/download/{{ file_owner }}/{{ filename }}/{{ latest_version }}">
+                <i class="fas fa-download"></i> Download
+            </a>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3 mb-3">
+
+            <div>
+                <label for="versionSelect" class="fw-bold"><i class="fas fa-history"></i> Select Version:</label>
+                <select id="versionSelect" class="form-select" onchange="updateIframe()" data-filename="{{ filename }}">
+                    {% for version in versions %}
+                        <option value="{{ version.versionNumber }}"
+                            {% if version.versionNumber == latest_version %} selected {% endif %}>
+                            Version {{ version.versionNumber }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="file-preview">
+            <iframe id="fileFrame" src="{{ file_url }}" width="100%" height="100%"></iframe>
+        </div>
+
+        <div class="mt-4 text-center">
+            <a href="{{ url_for('api_bp.user_bp.home') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Home
+            </a>
+        </div>
+    </div>
+
+    <script>
+        function updateIframe() {
+    const versionSelect = document.getElementById("versionSelect");
+    const selectedVersion = versionSelect.value;
+    const iframe = document.getElementById("fileFrame");
+    const downloadButton = document.getElementById("downloadButton");
+
+    const filename = versionSelect.getAttribute("data-filename");
+    const fileOwner = downloadButton.getAttribute("data-file-owner");
+
+    fetch(`/get-version-cid/${filename}/${selectedVersion}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.cid) {
+                const ipfsUrl = `https://${data.cid}.ipfs.w3s.link`;
+
+                iframe.src = ipfsUrl;
+
+                downloadButton.href = `/download/${fileOwner}/${filename}/${selectedVersion}`;
+            } else {
+                alert("Failed to retrieve version data.");
+            }
+        })
+        .catch(error => console.error("Error fetching version CID:", error));
+}
+
+    </script>
+</body>
+</html>
